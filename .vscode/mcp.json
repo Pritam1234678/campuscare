@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "google-stitch": {
+      "command": "npx",
+      "args": [
+        "stitch-mcp-server",
+        "--project-id",
+        "3615767789038877298",
+        "--api-key",
+        "AQ.Ab8RN6Iyl4Wd-3bgly3vdcMICK-Iq9pC6mi83h1YlgXfLGVPfQ"
+      ],
+      "type": "stdio",
+      "env": {}
+    }
+  }
+}
