@@ -5,16 +5,9 @@ require_once __DIR__ . '/../bootstrap.php';
 
 function requireAuth(): array
 {
-    $token = getBearerToken();
-
-    if ($token === null) {
-        errorResponse('Authorization token is required.', 401);
-    }
-
-    $payload = verifyToken($token);
-
-    if ($payload === null || !isset($payload['user_id'])) {
-        errorResponse('Invalid or expired token.', 401);
+    if (!isset($_SESSION['user']) || !isset($_SESSION['user']['id'])) {
+        header('Location: /campuscare/campuscare-api/auth/login.php');
+        exit;
     }
 
     $pdo = getDbConnection();
@@ -24,15 +17,19 @@ function requireAuth(): array
          WHERE id = :id
          LIMIT 1'
     );
-    $statement->execute(['id' => (int) $payload['user_id']]);
+    $statement->execute(['id' => (int) $_SESSION['user']['id']]);
     $user = $statement->fetch();
 
     if (!$user) {
-        errorResponse('Authenticated user was not found.', 401);
+        session_destroy();
+        header('Location: /campuscare/campuscare-api/auth/login.php?error=AccountNotFound');
+        exit;
     }
 
     if (($user['status'] ?? 'active') !== 'active') {
-        errorResponse('Your account is disabled.', 403);
+        session_destroy();
+        header('Location: /campuscare/campuscare-api/auth/login.php?error=AccountDisabled');
+        exit;
     }
 
     return $user;

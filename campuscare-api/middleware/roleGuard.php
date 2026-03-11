@@ -8,9 +8,9 @@ function requireRole(array $allowedRoles): array
     $user = requireAuth();
 
     if (!in_array($user['role'], $allowedRoles, true)) {
-        errorResponse('You do not have permission to access this resource.', 403, [
-            'allowed_roles' => $allowedRoles,
-        ]);
+        // Log out or redirect to generic dashboard
+        header('Location: /campuscare/campuscare-api/auth/login.php?error=AccessDenied');
+        exit;
     }
 
     return $user;
