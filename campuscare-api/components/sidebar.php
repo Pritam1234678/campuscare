@@ -3,23 +3,30 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 $user = $_SESSION['user'] ?? null;
-if (!$user) return; // Fail safe if included without session
+if (!$user) return;
 
 $role = $user['role'];
 $currentPath = basename($_SERVER['PHP_SELF']);
 
-// Define links dynamically based on role
+// Absolute base paths per role so sidebar works from ANY subfolder (shared/, student/, admin/ etc.)
+$roleBase = match(true) {
+    in_array($role, ['national','international']) => '/campuscare/campuscare-api/student/',
+    $role === 'admin'   => '/campuscare/campuscare-api/admin/',
+    $role === 'mentor'  => '/campuscare/campuscare-api/mentor/',
+    $role === 'warden'  => '/campuscare/campuscare-api/warden/',
+    $role === 'iro'     => '/campuscare/campuscare-api/iro/',
+    default             => '/campuscare/campuscare-api/',
+};
+
 $links = [];
-$links[] = ['name' => 'Dashboard', 'path' => 'dashboard.php', 'icon' => 'layout-dashboard'];
+$links[] = ['name' => 'Dashboard', 'path' => $roleBase . 'dashboard.php', 'icon' => 'layout-dashboard'];
 
 if ($role === 'national' || $role === 'international') {
-    $links[] = ['name' => 'Create Complaint', 'path' => 'create_complaint.php', 'icon' => 'plus-circle'];
-} elseif ($role === 'mentor' || $role === 'warden' || $role === 'iro') {
-    // Relying on Dashboard for Assigned Issues
+    $links[] = ['name' => 'Create Complaint', 'path' => $roleBase . 'create_complaint.php', 'icon' => 'plus-circle'];
 } elseif ($role === 'admin') {
-    $links[] = ['name' => 'All Complaints', 'path' => 'complaints.php', 'icon' => 'file-text'];
-    $links[] = ['name' => 'Manage Staff', 'path' => 'staff.php', 'icon' => 'users'];
-    $links[] = ['name' => 'System Settings', 'path' => 'settings.php', 'icon' => 'settings'];
+    $links[] = ['name' => 'All Complaints', 'path' => $roleBase . 'complaints.php', 'icon' => 'file-text'];
+    $links[] = ['name' => 'Manage Staff',   'path' => $roleBase . 'staff.php',       'icon' => 'users'];
+    $links[] = ['name' => 'System Settings','path' => $roleBase . 'settings.php',    'icon' => 'settings'];
 }
 ?>
 

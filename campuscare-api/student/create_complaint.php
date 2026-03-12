@@ -1,58 +1,70 @@
 <?php
 declare(strict_types=1);
-
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../middleware/roleGuard.php';
 
 $student = requireRole(['national', 'international']);
-$pdo = getDbConnection();
+$pdo     = getDbConnection();
+$isIntl  = $student['role'] === 'international';
 
-// Fetch categories for the dropdown
-$categories = $pdo->query('SELECT id, name FROM categories ORDER BY name ASC')->fetchAll();
+// Type: 'mentor' or 'iro' (international only can pick iro)
+$type = (isset($_GET['type']) && $_GET['type'] === 'iro' && $isIntl) ? 'iro' : 'mentor';
+
+if ($type === 'iro') {
+    $categories = $pdo->query("SELECT id, name FROM categories WHERE route_to = 'iro' ORDER BY name ASC")->fetchAll();
+} else {
+    // For normal complaints, show all non-IRO categories (Mentor, Warden, Admin)
+    $categories = $pdo->query("SELECT id, name FROM categories WHERE route_to != 'iro' ORDER BY name ASC")->fetchAll();
+}
 
 $message = '';
 $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $categoryId = (int) ($_POST['category_id'] ?? 0);
-    $title = trim($_POST['title'] ?? '');
+    $categoryId  = (int)($_POST['category_id'] ?? 0);
+    $title       = trim($_POST['title'] ?? '');
     $description = trim($_POST['description'] ?? '');
+    $routeTo     = $_POST['route_to'] ?? $type; // 'mentor' or 'iro'
 
-    if (empty($title) || empty($description) || $categoryId === 0) {
+    if (!$title || !$description || !$categoryId) {
         $message = 'All fields are required.';
         $messageType = 'error';
     } else {
-        $categoryStatement = $pdo->prepare('SELECT id, route_to FROM categories WHERE id = :id LIMIT 1');
-        $categoryStatement->execute(['id' => $categoryId]);
-        $category = $categoryStatement->fetch();
+        $catStmt = $pdo->prepare('SELECT id, route_to FROM categories WHERE id = :id LIMIT 1');
+        $catStmt->execute(['id' => $categoryId]);
+        $category = $catStmt->fetch();
 
         if (!$category) {
-            $message = 'Invalid category selected.';
-            $messageType = 'error';
+            $message = 'Invalid category.'; $messageType = 'error';
         } else {
             try {
-                $assigneeId = resolveComplaintAssignee($pdo, $student, $category['route_to']);
+                // Resolve assignee based on routing choice
+                if ($routeTo === 'iro' && $isIntl) {
+                    $iroStmt = $pdo->prepare("SELECT iro_id FROM iro_students WHERE student_id = :sid LIMIT 1");
+                    $iroStmt->execute(['sid' => $student['id']]);
+                    $iroRow    = $iroStmt->fetch();
+                    $assigneeId = $iroRow ? $iroRow['iro_id'] : null;
+                } else {
+                    $assigneeId = resolveComplaintAssignee($pdo, $student, $category['route_to']);
+                }
 
                 $insert = $pdo->prepare(
                     'INSERT INTO complaints (student_id, category_id, title, description, assigned_to, status)
-                     VALUES (:student_id, :category_id, :title, :description, :assigned_to, :status)'
+                     VALUES (:sid, :cid, :title, :desc, :assigned, "submitted")'
                 );
                 $insert->execute([
-                    'student_id' => (int) $student['id'],
-                    'category_id' => (int) $category['id'],
-                    'title' => $title,
-                    'description' => $description,
-                    'assigned_to' => $assigneeId,
-                    'status' => 'submitted',
+                    'sid'     => (int)$student['id'],
+                    'cid'     => (int)$category['id'],
+                    'title'   => $title,
+                    'desc'    => $description,
+                    'assigned'=> $assigneeId,
                 ]);
 
-                $message = 'Complaint submitted successfully and routed to the appropriate authority.';
+                $message = 'Complaint submitted and routed to the appropriate authority.';
                 $messageType = 'success';
-                // Clear inputs on success
                 unset($_POST['title'], $_POST['description'], $_POST['category_id']);
-            } catch (Exception $e) {
-                $message = 'System Error: ' . $e->getMessage();
-                $messageType = 'error';
+            } catch (\Exception $e) {
+                $message = 'Error: ' . $e->getMessage(); $messageType = 'error';
             }
         }
     }
@@ -60,77 +72,128 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ob_start();
 ?>
-<div class="max-w-3xl mx-auto">
-    <div class="mb-8">
-        <a href="dashboard.php" class="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-4 transition-colors">
-            <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Dashboard
+<div class="max-w-2xl mx-auto">
+    <!-- Breadcrumb -->
+    <div class="flex items-center gap-2 text-xs mb-6" style="color:#6b7280;">
+        <a href="dashboard.php" class="hover:text-white transition-colors">Home</a>
+        <i data-lucide="chevron-right" class="w-3 h-3"></i>
+        <a href="dashboard.php" class="hover:text-white transition-colors">Complaints</a>
+        <i data-lucide="chevron-right" class="w-3 h-3"></i>
+        <span style="color:#13ec87;">New Complaint</span>
+    </div>
+
+    <!-- Type Tabs (International only) -->
+    <?php if ($isIntl): ?>
+    <div class="flex gap-2 mb-6 p-1.5 rounded-xl" style="background:#0f2318;">
+        <a href="?type=mentor" class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all
+           <?= $type==='mentor' ? 'text-[#0a1510]' : '' ?>"
+           style="<?= $type==='mentor' ? 'background:#13ec87;' : 'color:#6b7280;' ?>">
+            <i data-lucide="user-check" class="w-4 h-4"></i> General Complaint
         </a>
-        <h2 class="text-3xl font-extrabold text-white tracking-tight">File a New Complaint</h2>
-        <p class="text-gray-400 mt-2">Submit detailed information about your issue. Intelligent routing will assign this ticket to the fastest available responder.</p>
+        <a href="?type=iro" class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all"
+           style="<?= $type==='iro' ? 'background:#7c3aed;color:#fff;' : 'color:#6b7280;' ?>">
+            <i data-lucide="globe" class="w-4 h-4"></i> IRO Complaint
+        </a>
+    </div>
+    <?php endif; ?>
+
+    <!-- Header -->
+    <div class="sc-card p-6 mb-5" style="<?= $type==='iro' ? 'border-color:rgba(124,58,237,.4);background:linear-gradient(135deg,#0f0718,#0a1510);' : '' ?>">
+        <div class="flex items-start gap-4">
+            <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
+                 style="background:<?= $type==='iro' ? 'rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4)' : '#13ec8722;border:1px solid #13ec8744' ?>;">
+                <i data-lucide="<?= $type==='iro' ? 'globe' : 'message-square' ?>" class="w-6 h-6"
+                   style="color:<?= $type==='iro' ? '#a78bfa' : '#13ec87' ?>;"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-black text-white">
+                    <?= $type==='iro' ? 'IRO Complaint' : 'File a New Complaint' ?>
+                </h1>
+                <p class="text-xs mt-1" style="color:#6b7280;">
+                    <?= $type==='iro'
+                        ? 'For international student concerns: visa, accommodation, academic, or welfare issues routed to your IRO Officer.'
+                        : 'Submit detailed information about your issue. It will be routed to the appropriate authority.' ?>
+                </p>
+            </div>
+        </div>
     </div>
 
     <?php if ($message): ?>
-        <div class="mb-6 p-4 rounded-lg flex items-start gap-3 border <?= $messageType === 'success' ? 'bg-[#13ec87]/10 text-[#13ec87] border-[#13ec87]/30' : 'bg-red-500/10 text-red-500 border-red-500/30' ?>">
-            <i data-lucide="<?= $messageType === 'success' ? 'check-circle' : 'alert-circle' ?>" class="w-5 h-5 shrink-0 mt-0.5"></i>
-            <p class="text-sm font-medium leading-relaxed"><?= htmlspecialchars($message) ?></p>
-        </div>
+    <div class="flex items-center gap-3 p-4 rounded-xl mb-5 border
+        <?= $messageType==='success' ? '' : '' ?>"
+        style="<?= $messageType==='success'
+            ? 'background:rgba(19,236,135,.1);border-color:rgba(19,236,135,.3);color:#13ec87;'
+            : 'background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.2);color:#f87171;' ?>">
+        <i data-lucide="<?= $messageType==='success' ? 'check-circle' : 'alert-circle' ?>" class="w-4 h-4 shrink-0"></i>
+        <span class="text-sm font-medium"><?= htmlspecialchars($message) ?></span>
+        <?php if ($messageType==='success'): ?>
+        <a href="dashboard.php" class="ml-auto text-xs font-bold px-3 py-1 rounded-lg" style="background:#13ec87;color:#0a1510;">← Dashboard</a>
+        <?php endif; ?>
+    </div>
     <?php endif; ?>
 
-    <form method="POST" class="bg-[#1e1e1e] border border-[#333] rounded-2xl p-8 space-y-8">
-        <div class="space-y-2">
-            <label for="category_id" class="text-sm font-bold text-white uppercase tracking-wider block">Issue Category <span class="text-red-500">*</span></label>
+    <!-- Form -->
+    <form method="POST" class="sc-card p-6 space-y-5">
+        <input type="hidden" name="route_to" value="<?= $type ?>">
+
+        <div>
+            <label class="sc-label" style="<?= $type==='iro'?'color:#a78bfa;':'' ?>">Issue Category *</label>
             <div class="relative">
-                <select id="category_id" name="category_id" required class="w-full bg-[#121212] border border-[#333] text-white px-4 py-3.5 rounded-xl appearance-none focus:outline-none focus:border-[#13ec87] focus:ring-1 focus:ring-[#13ec87] transition-all">
-                    <option value="" disabled <?= empty($_POST['category_id']) ? 'selected' : '' ?>>Select the most relevant category...</option>
+                <select name="category_id" required class="sc-input w-full px-4 py-3 rounded-xl text-sm appearance-none">
+                    <option value="" disabled <?= empty($_POST['category_id'])?'selected':'' ?>>Select category...</option>
                     <?php foreach ($categories as $cat): ?>
-                        <option value="<?= $cat['id'] ?>" <?= (isset($_POST['category_id']) && (int) $_POST['category_id'] === $cat['id']) ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($cat['name']) ?>
-                        </option>
+                    <option value="<?= $cat['id'] ?>" <?= (isset($_POST['category_id'])&&(int)$_POST['category_id']===$cat['id'])?'selected':'' ?>>
+                        <?= htmlspecialchars($cat['name']) ?>
+                    </option>
                     <?php endforeach; ?>
                 </select>
-                <i data-lucide="chevron-down" class="w-5 h-5 absolute right-4 top-4 text-gray-500 pointer-events-none"></i>
+                <i data-lucide="chevron-down" class="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" style="color:#6b7280;"></i>
             </div>
-            <p class="text-xs text-gray-500 ml-1">Category determines which staff member gets your complaint.</p>
+            <p class="text-[10px] mt-1.5" style="color:#4b5563;">Category determines which staff member receives your complaint.</p>
         </div>
 
-        <div class="space-y-2">
-            <label for="title" class="text-sm font-bold text-white uppercase tracking-wider block">Complaint Title <span class="text-red-500">*</span></label>
-            <input 
-                type="text" 
-                id="title" 
-                name="title" 
-                maxlength="255"
-                value="<?= htmlspecialchars($_POST['title'] ?? '') ?>"
-                placeholder="Brief summary of the issue (e.g., Broken Window in Room 101)"
-                required
-                class="w-full bg-[#121212] border border-[#333] text-white px-4 py-3.5 rounded-xl focus:outline-none focus:border-[#13ec87] focus:ring-1 focus:ring-[#13ec87] transition-all"
-            />
+        <div>
+            <label class="sc-label" style="<?= $type==='iro'?'color:#a78bfa;':'' ?>">Complaint Title *</label>
+            <input type="text" name="title" maxlength="255"
+                   value="<?= htmlspecialchars($_POST['title'] ?? '') ?>"
+                   placeholder="Brief summary of the issue..."
+                   required class="sc-input w-full px-4 py-3 rounded-xl text-sm">
         </div>
 
-        <div class="space-y-2">
-            <label for="description" class="text-sm font-bold text-white uppercase tracking-wider block">Detailed Description <span class="text-red-500">*</span></label>
-            <textarea 
-                id="description" 
-                name="description" 
-                rows="6"
-                placeholder="Provide all necessary details, context, and steps taken so far..."
-                required
-                class="w-full bg-[#121212] border border-[#333] text-white px-4 py-4 rounded-xl focus:outline-none focus:border-[#13ec87] focus:ring-1 focus:ring-[#13ec87] transition-all resize-y"
-            ><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
+        <div>
+            <label class="sc-label" style="<?= $type==='iro'?'color:#a78bfa;':'' ?>">Detailed Description *</label>
+            <textarea name="description" rows="5" required
+                      placeholder="Provide all necessary details, steps taken, dates, and relevant context..."
+                      class="sc-input w-full px-4 py-3 rounded-xl text-sm resize-y"><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
         </div>
 
-        <div class="pt-4 border-t border-[#333]">
-            <button 
-                type="submit" 
-                class="w-full sm:w-auto px-8 py-4 bg-[#13ec87] text-[#121212] font-extrabold rounded-xl shadow-[0_0_15px_rgba(19,236,135,0.2)] hover:bg-[#0fae62] hover:shadow-[0_0_25px_rgba(19,236,135,0.4)] transition-all flex items-center justify-center gap-2"
-            >
-                <i data-lucide="send" class="w-5 h-5"></i> Submit Complaint
+        <?php if ($type === 'iro'): ?>
+        <div class="p-4 rounded-xl border" style="background:rgba(124,58,237,.05);border-color:rgba(124,58,237,.2);">
+            <div class="flex items-start gap-2">
+                <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5" style="color:#a78bfa;"></i>
+                <p class="text-xs" style="color:#9ca3af;">
+                    This complaint will be routed <strong style="color:#a78bfa;">directly to your assigned IRO Officer</strong> for handling international student-specific concerns.
+                </p>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <div class="flex gap-3 pt-2">
+            <a href="dashboard.php" class="px-5 py-3 rounded-xl text-sm font-bold border transition-all"
+               style="background:#071009;border-color:#1a3a25;color:#9ca3af;">← Back</a>
+            <button type="submit" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all"
+                    style="<?= $type==='iro'
+                        ? 'background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;'
+                        : 'background:linear-gradient(135deg,#13ec87,#0aab62);color:#0a1510;' ?>">
+                <i data-lucide="send" class="w-4 h-4"></i>
+                <?= $type==='iro' ? 'Submit to IRO Officer' : 'Submit Complaint' ?>
             </button>
         </div>
     </form>
 </div>
+
 <?php
 $pageContent = ob_get_clean();
-$pageTitle = 'Submit Complaint';
-require_once __DIR__ . '/../components/layout.php';
-
+$pageTitle   = $type === 'iro' ? 'IRO Complaint' : 'New Complaint';
+$currentPage = $type === 'iro' ? 'iro' : 'create';
+require_once __DIR__ . '/../components/student_layout.php';

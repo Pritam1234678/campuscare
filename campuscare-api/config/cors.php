@@ -1,15 +1,14 @@
 <?php
 declare(strict_types=1);
 
-header('Content-Type: application/json');
+// Content-Type is set per-response by jsonResponse.php for API calls.
+// For SSR HTML pages, it should default to text/html which Apache handles automatically.
 
 $allowedOrigins = ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
 if (in_array($origin, $allowedOrigins, true)) {
     header("Access-Control-Allow-Origin: $origin");
-} else {
-    header("Access-Control-Allow-Origin: http://localhost:5173"); // Fallback
 }
 
 header('Access-Control-Allow-Credentials: true');

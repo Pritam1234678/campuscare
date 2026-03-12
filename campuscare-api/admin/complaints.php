@@ -59,79 +59,73 @@ function getStatusColorClass(string $status): string {
 
 ob_start();
 ?>
-<div class="mb-8 flex justify-between items-center">
-    <div>
-        <h2 class="text-2xl font-bold text-white tracking-tight">System Complaints</h2>
-        <p class="text-sm text-gray-400 mt-1">Review, monitor, and reassign all active institutional tickets.</p>
-    </div>
-</div>
-
 <?php if ($message): ?>
-    <div class="mb-6 p-4 rounded-lg flex items-start gap-3 border <?= $messageType === 'success' ? 'bg-[#13ec87]/10 text-[#13ec87] border-[#13ec87]/30' : 'bg-red-500/10 text-red-500 border-red-500/30' ?>">
-        <i data-lucide="<?= $messageType === 'success' ? 'check-circle' : 'alert-circle' ?>" class="w-5 h-5 shrink-0 mt-0.5"></i>
-        <p class="text-sm font-medium leading-relaxed"><?= htmlspecialchars($message) ?></p>
+    <div class="mb-6 p-4 rounded-xl flex items-center gap-3 <?= $messageType === 'success' ? 'bg-[#13ec87]/10 text-[#13ec87] border border-[#13ec87]/30' : 'bg-red-500/10 text-red-400 border border-red-500/20' ?>">
+        <i data-lucide="<?= $messageType === 'success' ? 'check-circle' : 'alert-circle' ?>" class="w-4 h-4 shrink-0"></i>
+        <span class="text-sm font-medium"><?= htmlspecialchars($message) ?></span>
     </div>
 <?php endif; ?>
 
-<div class="bg-[#1e1e1e] border border-[#333] rounded-xl overflow-hidden">
+<div class="cc-card rounded-2xl overflow-hidden">
     <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse min-w-[800px]">
+        <table class="w-full text-left text-sm min-w-[800px]">
             <thead>
-                <tr class="bg-[#2a2a2a] border-b border-[#333]">
-                    <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Date</th>
-                    <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Issue</th>
-                    <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Student</th>
-                    <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
-                    <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Assigned Staff</th>
+                <tr class="border-b border-[#1a3a25]">
+                    <th class="px-6 py-3 text-[10px] font-bold text-[#13ec87] uppercase tracking-widest">Date</th>
+                    <th class="px-6 py-3 text-[10px] font-bold text-[#13ec87] uppercase tracking-widest">Issue</th>
+                    <th class="px-6 py-3 text-[10px] font-bold text-[#13ec87] uppercase tracking-widest">Student</th>
+                    <th class="px-6 py-3 text-[10px] font-bold text-[#13ec87] uppercase tracking-widest">Status</th>
+                    <th class="px-6 py-3 text-[10px] font-bold text-[#13ec87] uppercase tracking-widest">Assigned Staff</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-[#333]">
+            <tbody class="divide-y divide-[#1a3a25]">
                 <?php foreach ($complaints as $c): ?>
-                <tr class="hover:bg-[#2a2a2a]/50 transition-colors cursor-default">
-                    <td class="px-6 py-4 text-sm text-gray-300 whitespace-nowrap">
+                <tr class="hover:bg-[#13ec87]/[0.03] transition-colors">
+                    <td class="px-6 py-4 text-gray-500 whitespace-nowrap text-xs">
                         <?= date('M j, Y', strtotime($c['created_at'])) ?>
                     </td>
                     <td class="px-6 py-4 max-w-[250px]">
-                        <div class="text-sm font-medium text-white truncate"><?= htmlspecialchars($c['title']) ?></div>
-                        <div class="text-xs text-gray-500 mt-1"><?= htmlspecialchars($c['category_name']) ?></div>
+                        <a href="/campuscare/campuscare-api/shared/view_complaint.php?id=<?= $c['id'] ?>" class="font-medium text-white hover:text-[#13ec87] transition-colors truncate block"><?= htmlspecialchars($c['title']) ?></a>
+                        <div class="text-xs text-gray-600 mt-0.5"><?= htmlspecialchars($c['category_name']) ?></div>
                     </td>
-                    <td class="px-6 py-4 text-sm text-gray-300">
-                        <?= htmlspecialchars($c['student_name']) ?>
-                    </td>
+                    <td class="px-6 py-4 text-gray-400 text-xs"><?= htmlspecialchars($c['student_name']) ?></td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="px-2 py-1 text-[10px] rounded border uppercase font-bold tracking-wider <?= getStatusColorClass($c['status']) ?>">
+                        <span class="px-2.5 py-1 text-[10px] rounded-full border uppercase font-bold tracking-wider <?= getStatusColorClass($c['status']) ?>">
                             <?= htmlspecialchars(str_replace('_', ' ', $c['status'])) ?>
                         </span>
                     </td>
-                    <td class="px-6 py-4" onclick="event.stopPropagation()">
-                        <!-- Quick Reassign Form -->
-                        <form method="POST" class="flex items-center gap-2">
+                    <td class="px-6 py-4">
+                        <form method="POST">
                             <input type="hidden" name="action" value="reassign">
                             <input type="hidden" name="complaint_id" value="<?= $c['id'] ?>">
-                            <select name="new_assignee_id" onchange="this.form.submit()" class="bg-[#121212] border border-[#333] text-gray-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#13ec87] w-full max-w-[160px] cursor-pointer hover:border-gray-500 transition-colors">
-                                <?php foreach ($staffMembers as $staff): ?>
-                                    <option value="<?= $staff['id'] ?>" <?= ((int)$c['assignee_id'] === $staff['id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($staff['name']) ?> (<?= htmlspecialchars($staff['role']) ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
+                            <div class="relative">
+                                <select name="new_assignee_id" onchange="this.form.submit()" class="cc-input text-xs rounded-lg px-3 py-1.5 max-w-[180px] w-full appearance-none cursor-pointer">
+                                    <?php foreach ($staffMembers as $staff): ?>
+                                        <option value="<?= $staff['id'] ?>" <?= ((int)$c['assignee_id'] === $staff['id']) ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($staff['name']) ?> (<?= htmlspecialchars($staff['role']) ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <i data-lucide="chevron-down" class="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none"></i>
+                            </div>
                         </form>
                     </td>
                 </tr>
                 <?php endforeach; ?>
-                
                 <?php if(empty($complaints)): ?>
-                <tr>
-                    <td colspan="5" class="px-6 py-8 text-center text-gray-500 text-sm">No complaints found in the system.</td>
-                </tr>
+                <tr><td colspan="5" class="px-6 py-10 text-center text-gray-500">No complaints found in the system.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
+    </div>
+    <div class="px-6 py-3 border-t border-[#1a3a25]">
+        <p class="text-xs text-gray-600"><?= count($complaints) ?> total complaints</p>
     </div>
 </div>
 
 <?php
 $pageContent = ob_get_clean();
-$pageTitle = 'Manage Complaints';
-$pageSubtitle = '';
-require_once __DIR__ . '/../components/layout.php';
+$pageTitle = 'Complaints';
+$pageSubtitle = 'Review, monitor, and reassign all active institutional tickets.';
+$currentPage = 'complaints';
+require_once __DIR__ . '/../components/admin_layout.php';

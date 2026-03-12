@@ -71,6 +71,7 @@ function getStudentIroId(PDO $pdo, int $studentId): ?int
 
 function getStudentWardenId(PDO $pdo, int $studentId): ?int
 {
+    // Primary: find warden via hostel_wardens join on student's hostel_id
     $statement = $pdo->prepare(
         'SELECT hw.warden_id
          FROM users u
@@ -87,7 +88,18 @@ function getStudentWardenId(PDO $pdo, int $studentId): ?int
     ]);
     $wardenId = $statement->fetchColumn();
 
-    return $wardenId === false ? null : (int) $wardenId;
+    if ($wardenId !== false) {
+        return (int) $wardenId;
+    }
+
+    // Fallback: any active warden in ANY hostel (if hostel_wardens is empty)
+    $fallback = $pdo->prepare(
+        "SELECT id FROM users WHERE role = 'warden' AND status = 'active' ORDER BY RAND() LIMIT 1"
+    );
+    $fallback->execute();
+    $anyWarden = $fallback->fetchColumn();
+
+    return $anyWarden === false ? null : (int) $anyWarden;
 }
 
 function getAnyAdminId(PDO $pdo): ?int
@@ -103,6 +115,10 @@ function resolveComplaintAssignee(PDO $pdo, array $student, string $routeTo): in
             break;
         case 'warden':
             $assigneeId = getStudentWardenId($pdo, (int) $student['id']);
+            // If no warden exists for this hostel, fall back to admin
+            if ($assigneeId === null) {
+                $assigneeId = getAnyAdminId($pdo);
+            }
             break;
         case 'iro':
             if (($student['role'] ?? '') !== 'international') {
